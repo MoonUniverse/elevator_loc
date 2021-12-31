@@ -1,0 +1,52 @@
+<package>
+  <name>elevator_loc</name>
+  <version>0.0.1</version>
+  <description>
+      elevator localization
+  </description>
+  <author>yuying.jin</author>
+  <maintainer email="yuying.jin@tmirob.com"> yuying.jin </maintainer>
+  <license> BSD </license>
+
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>libgoogle-glog-dev</build_depend>
+  <build_depend>ros-noetic-eigen-conversions</build_depend>
+  <build_depend>ros-noetic-tf-conversions</build_depend>
+  <build_depend>ros-noetic-tf2-geometry</build_depend>
+  <build_depend>pcl_conversions</build_depend>
+  <build_depend>pcl_ros</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>visualization_msgs</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>tf2</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+  <build_depend>roslib</build_depend>
+  <build_depend>libpointmatcher</build_depend>
+  <build_depend>pointmatcher_ros</build_depend>
+
+
+  <run_depend>libgoogle-glog-dev</run_depend>
+  <run_depend>ros-noetic-eigen-conversions</run_depend>
+  <run_depend>ros-noetic-tf-conversions</run_depend>
+  <run_depend>ros-noetic-tf2-geometry</run_depend>
+  <run_depend>pcl_conversions</run_depend>
+  <run_depend>pcl_ros</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>visualization_msgs</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>tf2</run_depend>
+  <run_depend>tf2_ros</run_depend>
+  <run_depend>tf2_geometry_msgs</run_depend>
+  <run_depend>roslib</run_depend>
+  <run_depend>libpointmatcher</run_depend>
+  <run_depend>pointmatcher_ros</run_depend>
+  
+
+</package>
