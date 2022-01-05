@@ -4,6 +4,8 @@ ElevatorLocalizer::ElevatorLocalizer() {
     ros::NodeHandle nh("~");
 
     nh.param("inflation_coefficient", inflation_coefficient_, 0.01);
+    nh.param<std::string>("initTranslation", initTranslation_, "0,0,0");
+    nh.param<std::string>("initRotation", initRotation_, "1,0,0;0,1,0;0,0,1");
 
     ref_point_pub = nh.advertise<sensor_msgs::PointCloud2>("ref_point", 10);
 
@@ -117,12 +119,105 @@ void ElevatorLocalizer::refpointfusion(List4DPoints elevator_vertex) {
     ref_point_pub.publish(ref_point);
 }
 
-void ElevatorLocalizer::laserscancallback(const sensor_msgs::LaserScan::ConstPtr &scan_msg) {
+void ElevatorLocalizer::laserscancallback(const sensor_msgs::LaserScan::ConstPtr& scan_msg) {
     if (scan_msg == nullptr) {
         return;
     }
     DP input_cloud =
         PointMatcher_ros::rosMsgToPointMatcherCloud<float>(*scan_msg, &tfListener, scan_msg->header.frame_id);
+    DP ref_cloud = PointMatcher_ros::rosMsgToPointMatcherCloud<float>(ref_point);
+    int cloudDimension = ref_cloud.getEuclideanDim();
+    if (!(cloudDimension == 2 || cloudDimension == 3)) {
+        cerr << "Invalid input point clouds dimension" << endl;
+        return;
+    }
+
+    PM::TransformationParameters translation = parseTranslation(initTranslation_, cloudDimension);
+    PM::TransformationParameters rotation = parseRotation(initRotation_, cloudDimension);
+    PM::TransformationParameters initTransfo = translation * rotation;
+
+    std::shared_ptr<PM::Transformation> rigidTrans;
+    rigidTrans = PM::get().REG(Transformation).create("RigidTransformation");
+    if (!rigidTrans->checkParameters(initTransfo)) {
+        cerr << endl << "Initial transformation is not rigid, identiy will be used" << endl;
+        initTransfo = PM::TransformationParameters::Identity(cloudDimension + 1, cloudDimension + 1);
+    }
+
+    const DP initializedData = rigidTrans->compute(input_cloud, initTransfo);
+
+    // Compute the transformation to express data in ref
+    PM::TransformationParameters T = icp(initializedData, ref_cloud);
+
+    // Transform data to express it in ref
+    DP data_out(initializedData);
+    icp.transformations.apply(data_out, T);
+
+    cout << "ICP transformation:" << endl << T << endl;
 }
+
+PM::TransformationParameters ElevatorLocalizer::parseTranslation(string& translation, const int cloudDimension) {
+    PM::TransformationParameters parsedTranslation;
+    parsedTranslation = PM::TransformationParameters::Identity(cloudDimension + 1, cloudDimension + 1);
+
+    translation.erase(std::remove(translation.begin(), translation.end(), '['), translation.end());
+    translation.erase(std::remove(translation.begin(), translation.end(), ']'), translation.end());
+    std::replace(translation.begin(), translation.end(), ',', ' ');
+    std::replace(translation.begin(), translation.end(), ';', ' ');
+
+    float translationValues[3] = {0};
+    stringstream translationStringStream(translation);
+    for (int i = 0; i < cloudDimension; i++) {
+        if (!(translationStringStream >> translationValues[i])) {
+            cerr << "An error occured while trying to parse the initial "
+                 << "translation." << endl
+                 << "No initial translation will be used" << endl;
+            return parsedTranslation;
+        }
+    }
+    float extraOutput = 0;
+    if ((translationStringStream >> extraOutput)) {
+        cerr << "Wrong initial translation size" << endl << "No initial translation will be used" << endl;
+        return parsedTranslation;
+    }
+
+    for (int i = 0; i < cloudDimension; i++) {
+        parsedTranslation(i, cloudDimension) = translationValues[i];
+    }
+
+    return parsedTranslation;
+}
+
+PM::TransformationParameters ElevatorLocalizer::parseRotation(string& rotation, const int cloudDimension) {
+    PM::TransformationParameters parsedRotation;
+    parsedRotation = PM::TransformationParameters::Identity(cloudDimension + 1, cloudDimension + 1);
+
+    rotation.erase(std::remove(rotation.begin(), rotation.end(), '['), rotation.end());
+    rotation.erase(std::remove(rotation.begin(), rotation.end(), ']'), rotation.end());
+    std::replace(rotation.begin(), rotation.end(), ',', ' ');
+    std::replace(rotation.begin(), rotation.end(), ';', ' ');
+
+    float rotationMatrix[9] = {0};
+    stringstream rotationStringStream(rotation);
+    for (int i = 0; i < cloudDimension * cloudDimension; i++) {
+        if (!(rotationStringStream >> rotationMatrix[i])) {
+            cerr << "An error occured while trying to parse the initial "
+                 << "rotation." << endl
+                 << "No initial rotation will be used" << endl;
+            return parsedRotation;
+        }
+    }
+    float extraOutput = 0;
+    if ((rotationStringStream >> extraOutput)) {
+        cerr << "Wrong initial rotation size" << endl << "No initial rotation will be used" << endl;
+        return parsedRotation;
+    }
+
+    for (int i = 0; i < cloudDimension * cloudDimension; i++) {
+        parsedRotation(i / cloudDimension, i % cloudDimension) = rotationMatrix[i];
+    }
+
+    return parsedRotation;
+}
+
 ElevatorLocalizer::~ElevatorLocalizer() {}
 } // namespace elevator_localizer

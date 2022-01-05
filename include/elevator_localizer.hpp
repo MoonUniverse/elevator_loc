@@ -35,7 +35,8 @@ private:
     void runBehavior(void);
     void laserscancallback(const sensor_msgs::LaserScan::ConstPtr &scan_msg);
     void refpointfusion(List4DPoints elevator_vertex);
-
+    PM::TransformationParameters parseTranslation(string &translation, const int cloudDimension);
+    PM::TransformationParameters parseRotation(string &rotation, const int cloudDimension);
     std::thread *run_behavior_thread_;
 
     ros::Subscriber laser_scan_sub;
@@ -47,6 +48,8 @@ private:
     double inflation_coefficient_;
 
     sensor_msgs::PointCloud2 ref_point;
+
+    string initTranslation_, initRotation_;
 
 public:
     // Create the default ICP algorithm
