@@ -1,19 +1,12 @@
 #include "elevator_localizer.hpp"
 namespace elevator_localizer {
-ElevatorLocalizer::ElevatorLocalizer() : it_since_initialized_(0) {
+ElevatorLocalizer::ElevatorLocalizer() {
     ros::NodeHandle nh("~");
-    const std::string pclFilename = nh.param<std::string>("pcd_filename", "");
-    mapCloud = loadPointcloudFromPcd(pclFilename);
 
-    nh.param("detect_up", detect_up_, 2.0);
-    nh.param("detect_down", detect_down_, -1.0);
-    nh.param("detect_right", detect_right_, 1.0);
-    nh.param("detect_left", detect_left_, 1.0);
-    nh.param("lidar_intensity", lidar_intensity_, 35000.0);
+    nh.param("inflation_coefficient", inflation_coefficient_, 0.01);
 
-    // Create the marker positions from the test points
-    List4DPoints positions_of_markers_on_object;
-    // Read in the marker positions from the YAML parameter file
+    ref_point_pub = nh.advertise<sensor_msgs::PointCloud2>("ref_point", 10);
+
     XmlRpc::XmlRpcValue points_list;
     if (!nh.getParam("marker_positions", points_list)) {
         ROS_ERROR(
@@ -33,48 +26,103 @@ ElevatorLocalizer::ElevatorLocalizer() : it_since_initialized_(0) {
             positions_of_markers_on_object(i) = temp_point;
         }
     }
+
+    // See the implementation of setDefault() to create a custom ICP algorithm
+    icp.setDefault();
+
     // publish
-    cloudPub = nh.advertise<sensor_msgs::PointCloud2>("icp_map", 10, true);
-    laser_filtered_point_pub = nh.advertise<sensor_msgs::PointCloud2>("laser_filtered_point", 10);
-    laser_icp_point_pub = nh.advertise<sensor_msgs::PointCloud2>("laser_icp_point_pub", 10);
-    box_legs_array_pub = nh.advertise<geometry_msgs::PoseArray>("box_legs", 10);
 
     // subscribe
+    laser_scan_sub = nh.subscribe<sensor_msgs::LaserScan>("/sick_tim551_scan", 10,
+                                                          boost::bind(&ElevatorLocalizer::laserscancallback, this, _1));
 
     run_behavior_thread_ = new std::thread(std::bind(&ElevatorLocalizer::runBehavior, this));
 }
 
-Pointcloud::Ptr ElevatorLocalizer::loadPointcloudFromPcd(const std::string &filename) {
-    Pointcloud::Ptr cloud(new Pointcloud);
-    pcl::PCLPointCloud2 cloudBlob;
-    pcl::io::loadPCDFile(filename, cloudBlob);
-    pcl::fromPCLPointCloud2(cloudBlob, *cloud);
-    return cloud;
-}
-
-void ElevatorLocalizer::publishCloud(Pointcloud::Ptr cloud, const ros::Publisher &pub, const std::string &frameId) {
-    cloud->header.frame_id = frameId;
-    cloud->header.seq = 0;
-    sensor_msgs::PointCloud2 msg;
-    pcl::toROSMsg(*cloud, msg);
-    msg.header.stamp = ros::Time::now();
-    pub.publish(msg);
-}
-
 void ElevatorLocalizer::runBehavior(void) {
     ros::NodeHandle nh;
-    ros::Rate rate(1.0);
+    ros::Rate rate(0.1);
     while (nh.ok()) {
-        // publishCloud(mapCloud, cloudPub, "laser_sick_tim551");
+        refpointfusion(positions_of_markers_on_object);
         rate.sleep();
     }
 }
-// DP TransportBoxLocalizer::fromPCL(const Pointcloud &pcl) {
-//     // todo this can result in data loss???
-//     sensor_msgs::PointCloud2 ros;
-//     pcl::toROSMsg(pcl, ros);
-//     return PointMatcher_ros::rosMsgToPointMatcherCloud<float>(ros);
-// }
 
+void ElevatorLocalizer::refpointfusion(List4DPoints elevator_vertex) {
+    if (elevator_vertex.size() < 2) {
+        ROS_ERROR("elevator vertex input error");
+        return;
+    }
+    vector<unsigned> tmp_data;
+    int point_width = 0;
+    float_union inflation_point_x, inflation_point_y, inflation_point_z, inflation_intensity;
+    for (int i = 0; i < elevator_vertex.size() - 1; i++) {
+        double inflation_dist =
+            hypot(elevator_vertex(i + 1)(0) - elevator_vertex(i)(0), elevator_vertex(i + 1)(1) - elevator_vertex(i)(1));
+
+        double inflation_angle =
+            atan2(elevator_vertex(i + 1)(0) - elevator_vertex(i)(0), elevator_vertex(i + 1)(1) - elevator_vertex(i)(1));
+        int inflation_count = inflation_dist / inflation_coefficient_;
+        point_width += inflation_count;
+
+        for (int index = 0; index < inflation_count; index++) {
+            inflation_point_x.fv = sin(inflation_angle) * (index * inflation_coefficient_) + elevator_vertex(i)(0);
+            inflation_point_y.fv = cos(inflation_angle) * (index * inflation_coefficient_) + elevator_vertex(i)(1);
+            inflation_point_z.fv = 0;
+            inflation_intensity.fv = 0;
+            for (int j = 0; j < 4; j++) {
+                tmp_data.push_back(inflation_point_x.cv[j]);
+            }
+            for (int j = 0; j < 4; j++) {
+                tmp_data.push_back(inflation_point_y.cv[j]);
+            }
+            for (int j = 0; j < 4; j++) {
+                tmp_data.push_back(inflation_point_z.cv[j]);
+            }
+            for (int j = 0; j < 4; j++) {
+                tmp_data.push_back(inflation_intensity.cv[j]);
+            }
+        }
+    }
+
+    const int numChannels = 4;
+
+    ref_point.header.stamp = ros::Time::now();
+    ref_point.header.frame_id = "world";
+    ref_point.header.seq = 0;
+
+    ref_point.height = 1;
+    ref_point.width = point_width;
+
+    ref_point.is_bigendian = false;
+    ref_point.is_dense = true;
+    ref_point.point_step = numChannels * sizeof(float);
+    ref_point.row_step = ref_point.point_step * ref_point.width;
+
+    ref_point.fields.resize(numChannels);
+    for (int i = 0; i < numChannels; i++) {
+        std::string channelId[] = {"x", "y", "z", "intensity"};
+        ref_point.fields[i].name = channelId[i];
+        ref_point.fields[i].offset = i * sizeof(float);
+        ref_point.fields[i].count = 1;
+        ref_point.fields[i].datatype = sensor_msgs::PointField::FLOAT32;
+    }
+    ref_point.data.resize(ref_point.row_step * ref_point.height);
+
+    for (int i = 0; i < ref_point.row_step * ref_point.height; ++i) {
+        ref_point.data[i] = tmp_data[i];
+    }
+    ROS_INFO("ref_point.data:%ld", ref_point.data.size());
+    tmp_data.clear();
+    ref_point_pub.publish(ref_point);
+}
+
+void ElevatorLocalizer::laserscancallback(const sensor_msgs::LaserScan::ConstPtr &scan_msg) {
+    if (scan_msg == nullptr) {
+        return;
+    }
+    DP input_cloud =
+        PointMatcher_ros::rosMsgToPointMatcherCloud<float>(*scan_msg, &tfListener, scan_msg->header.frame_id);
+}
 ElevatorLocalizer::~ElevatorLocalizer() {}
 } // namespace elevator_localizer

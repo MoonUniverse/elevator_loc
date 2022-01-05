@@ -15,42 +15,47 @@
 #include "geometry_msgs/PoseArray.h"
 #include "pointmatcher/PointMatcher.h"
 #include "pointmatcher_ros/point_cloud.h"
-using Point = pcl::PointXYZ;
-using Pointcloud = pcl::PointCloud<Point>;
-
+#include "tf/transform_listener.h"
 using namespace std;
 using namespace Eigen;
 
-typedef Eigen::Matrix<Eigen::Vector4d, Eigen::Dynamic, 1> List4DPoints;
-
+typedef union {
+    unsigned char cv[4];
+    float fv;
+} float_union;
 namespace elevator_localizer {
 
 typedef PointMatcher<float> PM;
 typedef PM::DataPoints DP;
+typedef PM::Parameters Parameters;
+typedef Eigen::Matrix<Eigen::Vector4d, Eigen::Dynamic, 1> List4DPoints;
 
 class ElevatorLocalizer {
 private:
-    Pointcloud::Ptr loadPointcloudFromPcd(const std::string &filename);
-    void publishCloud(Pointcloud::Ptr cloud, const ros::Publisher &pub, const std::string &frameId);
     void runBehavior(void);
-    // DP fromPCL(const Pointcloud &pcl);
+    void laserscancallback(const sensor_msgs::LaserScan::ConstPtr &scan_msg);
+    void refpointfusion(List4DPoints elevator_vertex);
 
-    Pointcloud::Ptr mapCloud;
     std::thread *run_behavior_thread_;
 
-    ros::Publisher cloudPub;
-    ros::Publisher laser_filtered_point_pub;
-    ros::Publisher laser_icp_point_pub;
-    ros::Publisher box_legs_array_pub;
-    ros::Subscriber cloudSub;
+    ros::Subscriber laser_scan_sub;
+    ros::Publisher ref_point_pub;
 
-    double detect_up_, detect_down_, detect_right_, detect_left_, lidar_intensity_;
+    List4DPoints positions_of_markers_on_object;
 
-    unsigned it_since_initialized_;
+    double elevator_length_, elevator_width_;
+    double inflation_coefficient_;
+
+    sensor_msgs::PointCloud2 ref_point;
 
 public:
+    // Create the default ICP algorithm
+    PM::ICP icp;
+
     ElevatorLocalizer();
     ~ElevatorLocalizer();
+
+    tf::TransformListener tfListener;
 };
 
 } // namespace elevator_localizer
