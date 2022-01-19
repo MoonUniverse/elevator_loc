@@ -6,5 +6,7 @@
   <node pkg="elevator_loc" type="localizer_node" respawn="false" name="localizer_node" output="screen">
     <rosparam command="load" file="$(arg marker_positions_file)"/>
 
+    
+
   </node>
 </launch>

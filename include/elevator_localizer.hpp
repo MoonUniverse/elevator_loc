@@ -10,6 +10,7 @@
 #include <Eigen/Dense>
 #include <boost/algorithm/string.hpp>
 #include <boost/thread.hpp>
+#include <sstream>
 #include <thread>
 
 #include "geometry_msgs/PoseArray.h"
@@ -33,19 +34,23 @@ typedef Eigen::Matrix<Eigen::Vector4d, Eigen::Dynamic, 1> List4DPoints;
 class ElevatorLocalizer {
 private:
     void runBehavior(void);
-    void laserscancallback(const sensor_msgs::LaserScan::ConstPtr &scan_msg);
+    void lidarpointcallback(const sensor_msgs::PointCloud2::ConstPtr &pointMsgIn);
     void refpointfusion(List4DPoints elevator_vertex);
     PM::TransformationParameters parseTranslation(string &translation, const int cloudDimension);
     PM::TransformationParameters parseRotation(string &rotation, const int cloudDimension);
     std::thread *run_behavior_thread_;
 
-    ros::Subscriber laser_scan_sub;
+    ros::Subscriber cur_point_sub;
+    ros::Publisher filtered_point_pub;
+    ros::Publisher compute_point_pub;
     ros::Publisher ref_point_pub;
 
     List4DPoints positions_of_markers_on_object;
 
     double elevator_length_, elevator_width_;
     double inflation_coefficient_;
+    double detect_up_, detect_down_, detect_right_, detect_left_, lidar_intensity_;
+    double base_sick_link_;
 
     sensor_msgs::PointCloud2 ref_point;
 
