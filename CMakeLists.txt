@@ -62,9 +62,9 @@ target_link_libraries(elevator_localizer
   ${PCL_IO_LIBRARIES}
 )
 
-add_executable(localizer_node
-  src/localizer_node.cpp
+add_executable(elevator_localizer_node
+  src/elevator_localizer_node.cpp
 )
-target_link_libraries(localizer_node  elevator_localizer)
+target_link_libraries(elevator_localizer_node  elevator_localizer)
 
 

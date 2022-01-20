@@ -13,10 +13,15 @@
 #include <sstream>
 #include <thread>
 
+#include "angles/angles.h"
 #include "geometry_msgs/PoseArray.h"
+#include "geometry_msgs/Twist.h"
 #include "pointmatcher/PointMatcher.h"
 #include "pointmatcher_ros/point_cloud.h"
+#include "pointmatcher_ros/transform.h"
+#include "std_msgs/String.h"
 #include "tf/transform_listener.h"
+
 using namespace std;
 using namespace Eigen;
 
@@ -24,6 +29,16 @@ typedef union {
     unsigned char cv[4];
     float fv;
 } float_union;
+
+enum MOVING_TO_TARGET_STATE {
+    MOVING_TO_TARGET_IDLE = 0,
+    FIRST_STAGE_MOVE,
+    SECOND_STAGE_MOVE,
+    THIRD_STAGE_MOVE,
+    NEAR_WALL_MOVE,
+    LEAVE_STAGE_MOVE
+};
+
 namespace elevator_localizer {
 
 typedef PointMatcher<float> PM;
@@ -36,14 +51,21 @@ private:
     void runBehavior(void);
     void lidarpointcallback(const sensor_msgs::PointCloud2::ConstPtr &pointMsgIn);
     void refpointfusion(List4DPoints elevator_vertex);
+    void cmdcallback(const std_msgs::String::ConstPtr &msg);
+    inline geometry_msgs::Twist calcVelocity(double linear_vel, double angle_vel);
+
     PM::TransformationParameters parseTranslation(string &translation, const int cloudDimension);
     PM::TransformationParameters parseRotation(string &rotation, const int cloudDimension);
     std::thread *run_behavior_thread_;
 
     ros::Subscriber cur_point_sub;
+    ros::Subscriber start_cmd_sub;
+
     ros::Publisher filtered_point_pub;
     ros::Publisher compute_point_pub;
     ros::Publisher ref_point_pub;
+    ros::Publisher elevator_coordinate_pub;
+    ros::Publisher vehicle_vel_pub;
 
     List4DPoints positions_of_markers_on_object;
 
@@ -55,6 +77,11 @@ private:
     sensor_msgs::PointCloud2 ref_point;
 
     string initTranslation_, initRotation_;
+    geometry_msgs::PoseStamped elevator_coordinate;
+
+    MOVING_TO_TARGET_STATE moving_state_;
+
+    double ki_integrator_a;
 
 public:
     // Create the default ICP algorithm

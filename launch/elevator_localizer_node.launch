@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<launch>
+
+	<arg name="marker_positions_file" default="$(find elevator_loc)/launch/demo.yaml"/> 
+
+  <node pkg="elevator_loc" type="elevator_localizer_node" respawn="false" name="elevator_localizer_node" output="screen">
+    <rosparam command="load" file="$(arg marker_positions_file)"/>
+
+    <param name="detect_up"               type="double" value= "3.0"  />
+    <param name="detect_down"             type="double" value= "-0.5"  />
+    <param name="detect_right"            type="double" value= "1.2"  />    
+    <param name="detect_left"             type="double" value= "1.2"  />
+    <param name="lidar_intensity"         type="double" value= "32500.0"  /> 
+    <param name="base_sick_link"          type="double" value= "0.223"  />
+    <param name="inflation_coefficient"   type="double" value= "0.01"  />
+
+  </node>
+</launch>
