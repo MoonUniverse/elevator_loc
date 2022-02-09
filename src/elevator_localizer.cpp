@@ -18,7 +18,7 @@ ElevatorLocalizer::ElevatorLocalizer() : ki_integrator_a(0.0) {
     ref_point_pub = nh.advertise<sensor_msgs::PointCloud2>("ref_point", 10);
     filtered_point_pub = nh.advertise<sensor_msgs::PointCloud2>("filtered_point", 10);
     compute_point_pub = nh.advertise<sensor_msgs::PointCloud2>("compute_point", 10);
-    elevator_coordinate_pub = nh.advertise<geometry_msgs::PoseStamped>("box_coordinate", 10);
+    elevator_coordinate_pub = nh.advertise<geometry_msgs::PoseStamped>("elevator_coordinate", 10);
     vehicle_vel_pub = nh.advertise<geometry_msgs::Twist>("/shelf_lifter/velocity", 10);
 
     // subscribe
