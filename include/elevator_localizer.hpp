@@ -74,6 +74,10 @@ private:
     double detect_up_, detect_down_, detect_right_, detect_left_, lidar_intensity_;
     double base_sick_link_;
 
+    PM::TransformationParameters translation;
+    PM::TransformationParameters rotation;
+    PM::TransformationParameters initTransfo;
+
     sensor_msgs::PointCloud2 ref_point;
 
     string initTranslation_, initRotation_;
@@ -82,6 +86,7 @@ private:
     MOVING_TO_TARGET_STATE moving_state_;
 
     double ki_integrator_a;
+    bool it_since_initialized_;
 
 public:
     // Create the default ICP algorithm

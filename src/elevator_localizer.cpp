@@ -1,6 +1,6 @@
 #include "elevator_localizer.hpp"
 namespace elevator_localizer {
-ElevatorLocalizer::ElevatorLocalizer() : ki_integrator_a(0.0) {
+ElevatorLocalizer::ElevatorLocalizer() : ki_integrator_a(0.0), it_since_initialized_(true) {
     ros::NodeHandle nh("~");
 
     nh.param("detect_up", detect_up_, 3.0);
@@ -79,39 +79,43 @@ void ElevatorLocalizer::runBehavior(void) {
     ros::Rate rate(50);
     geometry_msgs::Twist pub_cmd_vel;
     while (nh.ok()) {
+        ref_point_pub.publish(ref_point);
         switch (moving_state_) {
             case MOVING_TO_TARGET_IDLE: {
                 ROS_DEBUG("moving_state is Move to target idle!");
                 break;
             }
             case FIRST_STAGE_MOVE: {
-                /* code */
-                double error_dist = hypot(elevator_coordinate.pose.position.x, elevator_coordinate.pose.position.y);
-                double error_angle = 0 - angles::normalize_angle(tf::getYaw(elevator_coordinate.pose.orientation));
-
-                ki_integrator_a += (0 - elevator_coordinate.pose.position.y);
-
-                double rot_vel = 3.0 * (0 - elevator_coordinate.pose.position.y) + 0.0 * ki_integrator_a;
-
-                ROS_ERROR("error_dist:%f,error_angle:%f,rot_vel:%f", error_dist, error_angle, rot_vel);
-
-                double move_vel = 0.5 * error_dist;
-                if (error_dist >= 0.05) {
-                    pub_cmd_vel = calcVelocity(move_vel, rot_vel + error_angle); //
-                } else {
-                    pub_cmd_vel = calcVelocity(0.0, error_angle);
-                    if (fabs(error_angle) < 0.01) {
-                        moving_state_ = MOVING_TO_TARGET_IDLE;
-                        ki_integrator_a = 0;
-                    }
+                double goal_theta = 0 - angles::normalize_angle(tf::getYaw(elevator_coordinate.pose.orientation));
+                pub_cmd_vel = calcVelocity(0, 1.5 * goal_theta);
+                if (fabs(goal_theta) < 0.01) {
+                    pub_cmd_vel = calcVelocity(0, 0);
+                    moving_state_ = SECOND_STAGE_MOVE;
                 }
-
                 vehicle_vel_pub.publish(pub_cmd_vel);
                 break;
             }
 
             case SECOND_STAGE_MOVE: {
                 /* code */
+                double dist = hypot(elevator_coordinate.pose.position.x, elevator_coordinate.pose.position.y);
+                double goal_heading = 0 - angles::normalize_angle(atan2f(elevator_coordinate.pose.position.y,
+                                                                         elevator_coordinate.pose.position.x));
+                double goal_theta = 0 - angles::normalize_angle(tf::getYaw(elevator_coordinate.pose.orientation));
+
+                double rot_vel = 2 * goal_heading;
+                double move_vel = 0.5 * dist;
+
+                if (dist >= 0.1) {
+                    pub_cmd_vel = calcVelocity(move_vel, rot_vel); //
+                } else {
+                    pub_cmd_vel = calcVelocity(0.0, goal_theta);
+                    if (fabs(goal_theta) < 0.01) {
+                        moving_state_ = MOVING_TO_TARGET_IDLE;
+                    }
+                }
+
+                vehicle_vel_pub.publish(pub_cmd_vel);
                 break;
             }
         }
@@ -199,10 +203,10 @@ void ElevatorLocalizer::lidarpointcallback(const sensor_msgs::PointCloud2::Const
     int point_count = 0;
     for (int i = 0; i < pointMsgIn->width; i++) {
         for (int j = 0; j < 4; j++) {
-            point_x.cv[j] = pointMsgIn->data[i * 16 + j];
-            point_y.cv[j] = pointMsgIn->data[i * 16 + 4 + j];
+            point_x.cv[j] = pointMsgIn->data[i * 24 + j];
+            point_y.cv[j] = pointMsgIn->data[i * 24 + 4 + j];
             point_z.cv[j] = 0;
-            intensity.cv[j] = pointMsgIn->data[i * 16 + 12 + j];
+            intensity.cv[j] = pointMsgIn->data[i * 24 + 12 + j];
         }
         if (point_x.fv > detect_down_ && point_x.fv < detect_up_ && fabs(point_y.fv) < detect_right_ &&
             intensity.fv < lidar_intensity_) {
@@ -262,10 +266,15 @@ void ElevatorLocalizer::lidarpointcallback(const sensor_msgs::PointCloud2::Const
         cerr << "Invalid input point clouds dimension" << endl;
         return;
     }
+    if (it_since_initialized_) {
+        translation = parseTranslation(initTranslation_, cloudDimension);
+        rotation = parseRotation(initRotation_, cloudDimension);
+        initTransfo = translation * rotation;
 
-    PM::TransformationParameters translation = parseTranslation(initTranslation_, cloudDimension);
-    PM::TransformationParameters rotation = parseRotation(initRotation_, cloudDimension);
-    PM::TransformationParameters initTransfo = translation * rotation;
+        cout << "first Init transformation:" << endl << initTransfo << endl;
+
+        it_since_initialized_ = false;
+    }
 
     std::shared_ptr<PM::Transformation> rigidTrans;
     rigidTrans = PM::get().REG(Transformation).create("RigidTransformation");
@@ -279,6 +288,15 @@ void ElevatorLocalizer::lidarpointcallback(const sensor_msgs::PointCloud2::Const
     // Compute the transformation to express data in ref
     PM::TransformationParameters T = icp(initializedData, ref_cloud);
 
+    double distance = hypot(T(0, 2) - initTransfo(0, 2), T(1, 2) - -initTransfo(1, 2));
+    if (distance > 0.1) {
+        initTransfo = initTransfo * T;
+    } else {
+        initTransfo = initTransfo;
+    }
+
+    // initTransfo = initTransfo * T;
+
     // Transform data to express it in ref
     DP data_out(initializedData);
     icp.transformations.apply(data_out, T);
@@ -289,14 +307,14 @@ void ElevatorLocalizer::lidarpointcallback(const sensor_msgs::PointCloud2::Const
 
     compute_point_pub.publish(compute_point);
 
-    // initTranslation_ = std::to_string(T(0, 2)) + std::to_string(T(1, 2));
-
     // cout << "ICP transformation:" << endl << T << endl;
+
+    // cout << "Init transformation:" << endl << initTransfo << endl;
 
     elevator_coordinate.header.frame_id = "base_link";
     elevator_coordinate.header.stamp = ros::Time::now();
 
-    elevator_coordinate.pose = PointMatcher_ros::eigenMatrixToPoseMsg<float>(T);
+    elevator_coordinate.pose = PointMatcher_ros::eigenMatrixToPoseMsg<float>(initTransfo);
 
     elevator_coordinate_pub.publish(elevator_coordinate);
 }
@@ -373,7 +391,7 @@ void ElevatorLocalizer::cmdcallback(const std_msgs::String::ConstPtr& msg) {
     std_msgs::String cmd_str = *msg;
 
     if (cmd_str.data.find("move_back") != std::string::npos) {
-        // it_since_initialized_ = 0;
+        it_since_initialized_ = true;
         moving_state_ = FIRST_STAGE_MOVE;
         std::cout << "alignment start!" << std::endl;
     }

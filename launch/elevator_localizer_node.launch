@@ -7,12 +7,15 @@
     <rosparam command="load" file="$(arg marker_positions_file)"/>
 
     <param name="detect_up"               type="double" value= "3.0"  />
-    <param name="detect_down"             type="double" value= "-0.5"  />
+    <param name="detect_down"             type="double" value= "0.0"  />
     <param name="detect_right"            type="double" value= "1.2"  />    
     <param name="detect_left"             type="double" value= "1.2"  />
     <param name="lidar_intensity"         type="double" value= "32500.0"  /> 
-    <param name="base_sick_link"          type="double" value= "0.223"  />
-    <param name="inflation_coefficient"   type="double" value= "0.01"  />
+    <param name="base_sick_link"          type="double" value= "0.0"  />
+    <param name="inflation_coefficient"   type="double" value= "0.005"  />
+
+    <param name="initTranslation"         type="str" value= "-2.0,0.2"  />
+    <param name="initRotation"            type="str" value= "1,0;0,1"  />
 
   </node>
 </launch>
